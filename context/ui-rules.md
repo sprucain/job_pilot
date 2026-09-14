@@ -194,5 +194,5 @@ This project uses Tailwind v4. Tokens are defined with `@theme` in globals.css �
 - Never add gradients to card backgrounds
 - Never use more than one font weight in a single UI element
 - Never show raw error messages to users — always show human readable text
-- Never stack more than 2 levels of border radius inside each other
+- Never stack more than 2 levels of border radius inside each other, unless an approved design mockup explicitly shows 3+ (design assets are the source of truth for visual decisions — see the Profile page's Resume dropzone and Work Experience nested cards in ui-registry.md for the confirmed exceptions; don't extend this exception to anything not directly traced to a mockup)
 - Never use `position: fixed` for UI elements — use normal flow layout

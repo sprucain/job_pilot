@@ -1,6 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { SignOutButton } from "@/components/layout/SignOutButton";
+
 type Props = {
   isAuthenticated: boolean;
   activeRoute?: string;
@@ -54,6 +56,8 @@ export function Navbar({ isAuthenticated, activeRoute }: Props) {
             Start for free
           </Link>
         )}
+
+        {isAuthenticated && <SignOutButton />}
       </div>
     </header>
   );
