@@ -46,3 +46,22 @@ export type Profile = {
   resumePdfUrl: string | null;
   isComplete: boolean;
 };
+
+// Fields Feature 07 (AI Profile Extraction) can derive from a resume. Missing
+// keys always come back as their empty equivalent ("", [], 0, "" for the enum)
+// rather than being omitted, so callers never need to distinguish "not present"
+// from "not extracted" — see lib/resume-extraction.ts's lenient JSON parsing.
+export type ExtractedProfileFields = {
+  fullName: string;
+  phone: string;
+  location: string;
+  linkedinUrl: string;
+  portfolioUrl: string;
+  currentTitle: string;
+  experienceLevel: ExperienceLevel | "";
+  yearsExperience: number;
+  skills: string[];
+  industries: string[];
+  workExperience: Omit<WorkExperienceEntry, "id">[];
+  education: Education;
+};

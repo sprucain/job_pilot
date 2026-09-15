@@ -1,18 +1,12 @@
 import { TagInput } from "@/components/profile/TagInput";
 import { inputClass, labelClass } from "@/lib/form-styles";
+import { EXPERIENCE_LEVEL_OPTIONS } from "@/lib/profile-options";
 import type { ExperienceLevel, Profile } from "@/types";
 
 type Props = {
   profile: Profile;
   onChange: (patch: Partial<Profile>) => void;
 };
-
-const EXPERIENCE_LEVEL_OPTIONS: { value: ExperienceLevel; label: string }[] = [
-  { value: "junior", label: "Junior" },
-  { value: "mid", label: "Mid-Level" },
-  { value: "senior", label: "Senior" },
-  { value: "lead", label: "Lead" },
-];
 
 export function ProfessionalInfoSection({ profile, onChange }: Props) {
   return (

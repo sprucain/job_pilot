@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Eye, FileText, Trash2, UploadCloud } from "lucide-react";
+import { Eye, FileText, Sparkles, Trash2, UploadCloud } from "lucide-react";
 
-const MAX_RESUME_SIZE_BYTES = 5 * 1024 * 1024;
+import { MAX_RESUME_SIZE_BYTES } from "@/lib/constants";
 
 type Props = {
   existingResumeUrl: string | null;
@@ -12,6 +12,9 @@ type Props = {
   onFileSelect: (file: File) => void;
   onDelete: () => void;
   isDeleting: boolean;
+  onExtract: () => void;
+  isExtracting: boolean;
+  extractError: string | null;
 };
 
 export function ResumeUpload({
@@ -21,6 +24,9 @@ export function ResumeUpload({
   onFileSelect,
   onDelete,
   isDeleting,
+  onExtract,
+  isExtracting,
+  extractError,
 }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -122,6 +128,22 @@ export function ResumeUpload({
               )}
             </div>
           </div>
+
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-md border border-accent-light bg-accent-muted px-4 py-3">
+            <p className="text-sm text-text-secondary">
+              Let AI read this resume and auto-fill the profile fields below.
+            </p>
+            <button
+              type="button"
+              onClick={onExtract}
+              disabled={isExtracting}
+              className="flex shrink-0 items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden />
+              {isExtracting ? "Extracting..." : "Extract from Resume"}
+            </button>
+          </div>
+          {extractError && <p className="mt-2 text-sm text-error">{extractError}</p>}
 
           {activePreviewUrl ? (
             <iframe

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { MAX_RESUME_SIZE_BYTES, MAX_WORK_EXPERIENCE_ENTRIES } from "@/lib/constants";
 import { createInsforgeServer } from "@/lib/insforge-server";
 import {
   mapProfileInputToDbPayload,
@@ -12,8 +13,6 @@ import {
 import { computeProfileCompletion } from "@/lib/profile-completion";
 import { flushPostHogSafely, getPostHogClient } from "@/lib/posthog-server";
 import type { Profile } from "@/types";
-
-const MAX_RESUME_SIZE_BYTES = 5 * 1024 * 1024;
 
 const workExperienceEntrySchema = z.object({
   id: z.string(),
@@ -41,7 +40,7 @@ const profileInputSchema = z.object({
   yearsExperience: z.number().int().min(0).max(80),
   skills: z.array(z.string().max(100)).max(50),
   industries: z.array(z.string().max(100)).max(50),
-  workExperience: z.array(workExperienceEntrySchema).max(3),
+  workExperience: z.array(workExperienceEntrySchema).max(MAX_WORK_EXPERIENCE_ENTRIES),
   education: educationSchema,
   jobTitlesSeeking: z.string().max(500),
   remotePreference: z.enum(["remote", "onsite", "hybrid", "any"]),

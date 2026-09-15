@@ -254,7 +254,7 @@ All environment variables defined in `.env.local` for development. Never hardcod
 | `NEXT_PUBLIC_INSFORGE_ANON_KEY` | lib/insforge-client.ts, lib/insforge-server.ts, actions/auth.ts, proxy.ts  |
 | `BROWSERBASE_API_KEY`           | lib/browserbase.ts     |
 | `BROWSERBASE_PROJECT_ID`        | lib/browserbase.ts     |
-| `OPENAI_API_KEY`                | agent/ functions       |
+| `VENICE_API_KEY`                | lib/venice-client.ts (agent/ functions import the client from there) |
 | `ADZUNA_APP_ID`                 | lib/adzuna.ts          |
 | `ADZUNA_APP_KEY`                | lib/adzuna.ts          |
 | `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` | instrumentation-client.ts, lib/posthog-server.ts |
@@ -315,7 +315,7 @@ Approved dependencies for this project:
 - `@insforge/sdk` — InsForge client. SSR helpers are subpath exports: `@insforge/sdk/ssr` and `@insforge/sdk/ssr/middleware` (there is no separate `@insforge/ssr` package)
 - `@browserbasehq/sdk` — Browserbase sessions
 - `@browserbasehq/stagehand` — AI browser control
-- `openai` — GPT-4o API
+- `openai` — OpenAI-compatible SDK, used against Venice AI (GLM 5.2) via `lib/venice-client.ts` — never against OpenAI's own API
 - `posthog-js` — PostHog browser client
 - `posthog-node` — PostHog server client
 - `@react-pdf/renderer` — Resume PDF generation

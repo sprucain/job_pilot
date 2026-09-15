@@ -321,6 +321,12 @@ const stagehand = new Stagehand({
   apiKey: process.env.BROWSERBASE_API_KEY!,
   projectId: process.env.BROWSERBASE_PROJECT_ID!,
   browserbaseSessionID: session.id,
+  // NOT swapped to Venice/GLM 5.2 as part of the project-wide Venice migration —
+  // Stagehand takes a `modelName` string + apiKey, not an arbitrary OpenAI-compatible
+  // baseURL, and whether it supports Venice at all is unverified. Feature 13 (Company
+  // Research Agent) isn't built yet — confirm Stagehand/Venice compatibility before
+  // building it, rather than assuming this line can just be swapped like the raw
+  // `openai` SDK call sites were.
   model: { modelName: "openai/gpt-4o", apiKey: process.env.OPENAI_API_KEY! },
   disablePino: true,
 });
@@ -475,10 +481,12 @@ Experience: ${profile.years_experience} years, level ${profile.experience_level}
 Skills: ${profile.skills.join(", ")}
 Work history: ${JSON.stringify(profile.work_experience)}`;
 
-const response = await openai.chat.completions.create({
-  model: "gpt-4o",
+const response = await getVeniceClient().chat.completions.create({
+  model: AI_MODEL,
   response_format: { type: "json_object" },
   temperature: 0.4,
+  // @ts-expect-error Venice-specific extension, not in the OpenAI SDK's types
+  venice_parameters: { disable_thinking: true },
   messages: [
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
@@ -513,21 +521,44 @@ const response = await openai.chat.completions.create({
 - If browser research returns empty — still run synthesis with job + profile only
 - yourEdge, gapsToAddress, and smartQuestions are the most valuable fields — never skip them
 
-## OpenAI GPT-4o
+## Venice AI (GLM 5.2)
 
-**Check first:** Check AGENTS.md for an installed OpenAI skill. The skill will have the latest API patterns and model capabilities.
+**Check first:** No Venice AI skill or MCP server is installed for this project — refer to https://docs.venice.ai and this section. Venice is OpenAI-compatible, so the `openai` npm SDK is used unmodified, just pointed at Venice's base URL.
+
+Client is centralized in `lib/venice-client.ts` — never construct a raw `new OpenAI(...)` at a call site, always import `getVeniceClient()` and `AI_MODEL` from there so the base URL, key, and model name can never drift between call sites.
+
+```typescript
+// lib/venice-client.ts
+import OpenAI from "openai";
+
+export const AI_MODEL = "zai-org-glm-5-2";
+
+let veniceClient: OpenAI | null = null;
+
+export function getVeniceClient(): OpenAI {
+  if (!veniceClient) {
+    veniceClient = new OpenAI({
+      apiKey: process.env.VENICE_API_KEY!,
+      baseURL: "https://api.venice.ai/api/v1",
+    });
+  }
+  return veniceClient;
+}
+```
 
 ### Structured JSON Response
 
 ```typescript
-import OpenAI from "openai";
+import { getVeniceClient, AI_MODEL } from "@/lib/venice-client";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+const openai = getVeniceClient();
 
 const response = await openai.chat.completions.create({
-  model: "gpt-4o",
+  model: AI_MODEL,
   response_format: { type: "json_object" },
   temperature: 0.3,
+  // @ts-expect-error Venice-specific extension, not in the OpenAI SDK's types
+  venice_parameters: { disable_thinking: true },
   messages: [
     {
       role: "system",
@@ -543,6 +574,10 @@ const response = await openai.chat.completions.create({
 const result = JSON.parse(response.choices[0].message.content!);
 ```
 
+**GLM 5.2 is a reasoning model — always pass `venice_parameters: { disable_thinking: true }`:**
+
+Confirmed by live testing during setup: without it, the model returns a separate `reasoning_content` field and spends completion tokens on invisible chain-of-thought before it writes `content` — at low `max_tokens` (e.g. 10) the reasoning consumed the entire budget and `content` came back as an empty string, which would silently break every `JSON.parse()` call site in this project. With `disable_thinking: true`, `reasoning_content` is `null`, no tokens are spent on it, and `content` reliably holds the full JSON response within the existing max-token budgets below. Every call in this project uses this flag — none of our use cases (matching, extraction, synthesis, generation) need a visible reasoning trace.
+
 **Temperature settings:**
 
 - `0.3` — matching, scoring, extraction, research synthesis — deterministic results
@@ -557,7 +592,8 @@ const result = JSON.parse(response.choices[0].message.content!);
 
 **Rules:**
 
-- Model string is always `'gpt-4o'` — never use other model names
+- Model string is always `AI_MODEL` from `lib/venice-client.ts` (currently `zai-org-glm-5-2`) — never hardcode a model string at the call site
+- Always set `venice_parameters: { disable_thinking: true }` — see reasoning-model note above
 - Always use `response_format: { type: 'json_object' }` for structured data
 - Always parse `response.choices[0].message.content` as string — even with json_object it returns a string
 - Always validate parsed JSON before using — wrap in try/catch
@@ -712,10 +748,12 @@ Only use these — others are silently ignored:
 
 **Check first:** Check AGENTS.md for an installed pdf-parse skill.
 
+**Corrected during Feature 07 (2026-09-15):** The example below used to show v1's `pdf(buffer)` default-export call — that API doesn't exist in the installed version. `pdf-parse@2.4.5` is a full rewrite: a `PDFParse` class with `getText()`/`getInfo()`/etc. methods. Confirmed by live testing during Feature 07's build.
+
 ### Extract Text from Uploaded Resume
 
 ```typescript
-import pdf from "pdf-parse";
+import { PDFParse } from "pdf-parse";
 
 // In API route handling resume upload
 export async function POST(req: NextRequest) {
@@ -724,16 +762,24 @@ export async function POST(req: NextRequest) {
   const arrayBuffer = await file.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
 
-  const pdfData = await pdf(buffer);
-  const extractedText = pdfData.text; // raw text content
+  const parser = new PDFParse({ data: buffer });
+  let extractedText: string;
+  try {
+    const result = await parser.getText();
+    extractedText = result.text; // raw text content
+  } finally {
+    await parser.destroy();
+  }
 
-  // Send to GPT-4o for structured extraction
+  // Send to Venice AI (GLM 5.2) for structured extraction
 }
 ```
 
 **Rules:**
 
 - Server-side only — never import in client components
-- `pdfData.text` is raw unformatted text — GPT-4o handles the structure extraction
-- Always handle parse errors — some PDFs are image-based and return empty text
-- If `pdfData.text` is empty or very short — return error to user: "Could not extract text from this PDF. Please try a different file."
+- `result.text` is raw unformatted text — GLM 5.2 handles the structure extraction
+- Always call `await parser.destroy()` (in a `finally` block) to free memory, even on error
+- Always handle parse errors — some PDFs are image-based and return empty text, and a malformed PDF throws `InvalidPDFException` from `parser.getText()`
+- If the extracted text is empty or very short — return error to user: "Could not extract text from this PDF. Please try a different file."
+- **Next.js config requirement:** add `pdf-parse` to `serverExternalPackages` in `next.config.ts`. Without it, Turbopack bundles `pdf-parse`'s `pdfjs-dist` dependency into the Server Components bundle, which breaks the relative-path worker it tries to spin up (`Setting up fake worker failed: Cannot find module '.../pdf.worker.mjs'`) — confirmed by live testing. `serverExternalPackages` makes Next.js load it via native Node `require` instead, where the worker resolves correctly.

@@ -9,7 +9,7 @@
 | Cloud browser                  | Browserbase              | Company research — browsing company public pages |
 | AI browser control             | Stagehand                | Company page interaction and content extraction  |
 | Job Discovery                  | Adzuna API               | Job search and discovery                         |
-| AI model                       | OpenAI GPT-4o            | Matching, research synthesis, extraction         |
+| AI model                       | Venice AI (GLM 5.2)      | Matching, research synthesis, extraction         |
 | Analytics                      | PostHog                  | Event tracking and dashboard charts              |
 | PDF generation                 | @react-pdf/renderer      | Resume PDF rendering                             |
 | Styling                        | Tailwind CSS + shadcn/ui | UI components and styling                        |
@@ -99,6 +99,7 @@
 │   ├── browserbase.ts                     → Browserbase session creation + management
 │   ├── stagehand.ts                       → Stagehand initialisation with Browserbase session
 │   ├── adzuna.ts                          → Adzuna API client
+│   ├── venice-client.ts                   → Venice AI client (OpenAI-compatible, GLM 5.2)
 │   ├── posthog-client.ts                  → PostHog browser client
 │   ├── posthog-server.ts                  → PostHog server client
 │   └── utils.ts                           → Shared utility functions
@@ -367,6 +368,9 @@ const stagehand = new Stagehand({
   apiKey: process.env.BROWSERBASE_API_KEY!,
   projectId: process.env.BROWSERBASE_PROJECT_ID!,
   browserbaseSessionID: session.id,
+  // Not swapped to Venice/GLM 5.2 — Stagehand's model wiring is a named-provider
+  // string, not an arbitrary OpenAI-compatible baseURL; Venice compatibility is
+  // unverified. Confirm before building Feature 13. See library-docs.md's Stagehand section.
   modelName: "gpt-4o",
   modelClientOptions: { apiKey: process.env.OPENAI_API_KEY! },
 });
