@@ -12,6 +12,7 @@ import {
 } from "@/lib/profile-mapping";
 import { computeProfileCompletion } from "@/lib/profile-completion";
 import { flushPostHogSafely, getPostHogClient } from "@/lib/posthog-server";
+import { signResumePreviewUrl, uploadResumeFile } from "@/lib/resume-storage";
 import type { Profile } from "@/types";
 
 const workExperienceEntrySchema = z.object({
@@ -113,9 +114,7 @@ export async function saveProfile(formData: FormData): Promise<SaveProfileResult
 
     let resumePdfUrl = existing?.resume_pdf_url ?? null;
     if (resumeFile) {
-      const { data: uploadData, error: uploadError } = await insforge.storage
-        .from("resumes")
-        .upload(`${user.id}/resume.pdf`, resumeFile);
+      const { data: uploadData, error: uploadError } = await uploadResumeFile(insforge, user.id, resumeFile);
       if (uploadError || !uploadData) {
         console.error("[actions/profile]", uploadError);
         return { success: false, error: "Failed to upload resume." };
@@ -193,17 +192,7 @@ export async function saveProfile(formData: FormData): Promise<SaveProfileResult
 
     // Best-effort — a signing failure shouldn't fail a save that already succeeded,
     // the UI just falls back to no inline preview until the next page load.
-    let resumePreviewUrl: string | null = null;
-    if (resumePdfUrl) {
-      const { data: signedData, error: signError } = await insforge.storage
-        .from("resumes")
-        .createSignedUrl(resumePdfUrl);
-      if (signError) {
-        console.error("[actions/profile]", signError);
-      } else {
-        resumePreviewUrl = signedData?.signedUrl ?? null;
-      }
-    }
+    const resumePreviewUrl = resumePdfUrl ? await signResumePreviewUrl(insforge, resumePdfUrl) : null;
 
     return { success: true, data: { resumePdfUrl, resumePreviewUrl } };
   } catch (error) {

@@ -342,6 +342,7 @@ size: 36x36px
 ## Invariants
 
 - Never use hex values directly in components — always use CSS variables via Tailwind tokens
+- **PDF/non-DOM renderers exception (added Feature 08, 2026-09-16):** `@react-pdf/renderer` templates (`lib/resume-pdf.tsx`) render server-side via PDFKit, not the browser DOM — there is no CSS engine to resolve `var(--color-*)` custom properties or Tailwind classes at all, so the "always use CSS variables" rule is mechanically impossible to follow there. The one approved exception: hex literals matching this file's token values (copied exactly, e.g. `--color-text-primary`'s `#101828`), declared as named constants at the top of the file (never inline in `StyleSheet.create()`), with a comment naming the token each one mirrors. Do not extend this exception to anything that renders in the browser — components/pages still have full Tailwind/CSS-variable access and must use it.
 - Font is Inter — always import via next/font/google, never use a fallback system font
 - Never use raw Tailwind color classes like `bg-purple-500` or `text-gray-600` — use project tokens only
 - `--accent` (#7C5CFC) is the only purple — never use Tailwind's built-in purple scale

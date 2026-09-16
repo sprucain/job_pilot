@@ -15,6 +15,17 @@ type Props = {
   onExtract: () => void;
   isExtracting: boolean;
   extractError: string | null;
+  // True once the active resume file is the AI-generated one (rather than something
+  // the user uploaded) — Extract is disabled in that case, see below.
+  isGeneratedResume: boolean;
+  onGenerate: () => void;
+  isGenerating: boolean;
+  generateError: string | null;
+  // True while ANY resume-mutating action (Save/Delete/Extract/Generate) elsewhere
+  // on the form is in flight — disables every button here too, so two of these
+  // actions (all of which read or write the same resume file/DB row) can never
+  // overlap and interleave.
+  busy: boolean;
 };
 
 export function ResumeUpload({
@@ -27,6 +38,11 @@ export function ResumeUpload({
   onExtract,
   isExtracting,
   extractError,
+  isGeneratedResume,
+  onGenerate,
+  isGenerating,
+  generateError,
+  busy,
 }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -45,6 +61,7 @@ export function ResumeUpload({
   }, [pendingPreviewUrl]);
 
   function handleFiles(files: FileList | null) {
+    if (busy) return;
     const file = files?.[0];
     if (!file) return;
 
@@ -79,6 +96,7 @@ export function ResumeUpload({
         ref={inputRef}
         type="file"
         accept="application/pdf"
+        disabled={busy}
         className="hidden"
         onChange={(event) => handleFiles(event.target.files)}
       />
@@ -110,7 +128,8 @@ export function ResumeUpload({
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className="text-sm font-medium text-text-secondary hover:text-accent"
+                disabled={busy}
+                className="text-sm font-medium text-text-secondary hover:text-accent disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Replace
               </button>
@@ -118,7 +137,7 @@ export function ResumeUpload({
                 <button
                   type="button"
                   onClick={onDelete}
-                  disabled={isDeleting}
+                  disabled={isDeleting || busy}
                   aria-label="Remove resume"
                   className="flex items-center gap-1.5 text-sm font-medium text-text-secondary hover:text-error disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -131,12 +150,14 @@ export function ResumeUpload({
 
           <div className="mt-4 flex items-center justify-between gap-3 rounded-md border border-accent-light bg-accent-muted px-4 py-3">
             <p className="text-sm text-text-secondary">
-              Let AI read this resume and auto-fill the profile fields below.
+              {isGeneratedResume
+                ? "This resume was generated from your profile — upload your own resume to use Extract."
+                : "Let AI read this resume and auto-fill the profile fields below."}
             </p>
             <button
               type="button"
               onClick={onExtract}
-              disabled={isExtracting}
+              disabled={isExtracting || busy || isGeneratedResume}
               className="flex shrink-0 items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Sparkles className="h-4 w-4" aria-hidden />
@@ -169,10 +190,12 @@ export function ResumeUpload({
             setIsDragging(false);
             handleFiles(event.dataTransfer.files);
           }}
-          onClick={() => inputRef.current?.click()}
-          className={`mt-6 flex cursor-pointer flex-col items-center rounded-2xl border border-dashed px-6 py-10 text-center ${
-            isDragging ? "border-accent bg-accent-muted" : "border-border-muted bg-surface-secondary"
-          }`}
+          onClick={() => {
+            if (!busy) inputRef.current?.click();
+          }}
+          className={`mt-6 flex flex-col items-center rounded-2xl border border-dashed px-6 py-10 text-center ${
+            busy ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+          } ${isDragging ? "border-accent bg-accent-muted" : "border-border-muted bg-surface-secondary"}`}
         >
           <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-surface">
             <UploadCloud className="h-5 w-5 text-accent" aria-hidden />
@@ -188,22 +211,28 @@ export function ResumeUpload({
               event.stopPropagation();
               inputRef.current?.click();
             }}
-            className="mt-4 rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-text-primary shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)] hover:bg-surface-secondary"
+            disabled={busy}
+            className="mt-4 rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-text-primary shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)] hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-60"
           >
             Select Resume
           </button>
         </div>
       )}
 
-      <div className="mt-6 flex items-center justify-between border-t border-border pt-6">
-        <p className="text-sm text-text-secondary">Need a fresh document based on the fields below?</p>
-        <button
-          type="button"
-          className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent-dark"
-        >
-          <FileText className="h-4 w-4" aria-hidden />
-          Generate Resume from Profile
-        </button>
+      <div className="mt-6 border-t border-border pt-6">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-text-secondary">Need a fresh document based on the fields below?</p>
+          <button
+            type="button"
+            onClick={onGenerate}
+            disabled={isGenerating || busy}
+            className="flex shrink-0 items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <FileText className="h-4 w-4" aria-hidden />
+            {isGenerating ? "Generating..." : "Generate Resume from Profile"}
+          </button>
+        </div>
+        {generateError && <p className="mt-2 text-sm text-error">{generateError}</p>}
       </div>
     </div>
   );

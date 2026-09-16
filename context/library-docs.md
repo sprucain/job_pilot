@@ -149,16 +149,21 @@ const { error } = await insforge
 
 ### Storage
 
+**Corrected during Feature 08 (2026-09-16):** The installed SDK's `upload()` is `(path: string, file: File | Blob) => Promise<...>` — two args only, no options object, no separate `contentType`/`upsert` flags. It always does a standard PUT: uploading to an existing key replaces the object in place, so "upsert" is just the default behavior, not something to opt into. Confirmed against `node_modules/@insforge/sdk`'s type declarations. A raw `Buffer` (e.g. from `renderToBuffer`) isn't accepted directly — wrap it in a `Blob` first so its `type` carries the content type.
+
 ```typescript
-// Upload file
+// Upload file — from a File (e.g. a form upload)
 const { data, error } = await insforge.storage
   .from("resumes")
-  .upload(`${userId}/resume.pdf`, fileBuffer, {
-    contentType: "application/pdf",
-    upsert: true, // overwrites existing file
-  });
+  .upload(`${userId}/resume.pdf`, someFile);
 
-// Get public URL
+// Upload a generated Buffer — wrap in a Blob first
+const pdfBlob = new Blob([buffer], { type: "application/pdf" });
+const { data, error } = await insforge.storage
+  .from("resumes")
+  .upload(`${userId}/resume.pdf`, pdfBlob);
+
+// Get public URL (public buckets only — resumes is private, use createSignedUrl instead)
 const { data } = insforge.storage
   .from("resumes")
   .getPublicUrl(`${userId}/resume.pdf`);
@@ -172,9 +177,9 @@ const url = data.publicUrl;
 
 **Rules:**
 
-- Always use `upsert: true` for base resume uploads — overwrites existing file
-- Always save the public URL back to the DB after upload
-- Never write files to disk — always upload buffer directly to storage
+- Uploading to an existing key always overwrites it in place — no separate upsert flag needed or available
+- Always save the returned storage key (`data.key`) back to the DB after upload — `resumes` is a private bucket, so this is a key to pass to `createSignedUrl()`, not a fetchable URL on its own
+- Never write files to disk — always upload a File/Blob built directly from the buffer
 
 ---
 

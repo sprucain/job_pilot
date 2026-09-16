@@ -33,8 +33,22 @@ export function ProfileForm({ initialProfile, initialResumePreviewUrl }: Props) 
   const [isDeletingResume, startDeleteTransition] = useTransition();
   const [isExtracting, startExtractTransition] = useTransition();
   const [extractError, setExtractError] = useState<string | null>(null);
+  const [isGenerating, startGenerateTransition] = useTransition();
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  // True once the *active* resume file is the AI-generated one (set after a
+  // successful Generate, cleared the moment the user picks their own file or
+  // deletes it). Extracting from a resume GLM wrote from this same profile would
+  // just re-extract its own output back into the form — see the Extract button's
+  // disabled state below.
+  const [isGeneratedResume, setIsGeneratedResume] = useState(false);
   const [conflicts, setConflicts] = useState<FieldConflict[]>([]);
   const [conflictValues, setConflictValues] = useState<Partial<ExtractedProfileFields>>({});
+
+  // Save/Delete/Extract/Generate all write to the same resume file and/or the same
+  // profile row — while any one is in flight, the others are disabled so their
+  // requests can't interleave (e.g. Delete completing mid-Generate and having its
+  // result silently resurrected by Generate's own upload landing after).
+  const isBusy = isPending || isDeletingResume || isExtracting || isGenerating;
 
   // Extraction is a multi-second round trip — the user can keep editing the form
   // while it's in flight. handleExtract must diff against the profile as of when
@@ -87,43 +101,99 @@ export function ProfileForm({ initialProfile, initialResumePreviewUrl }: Props) 
     }));
   }
 
-  function handleSave() {
-    startTransition(async () => {
-      const profileInput: ProfileInput = {
-        fullName: profile.fullName,
-        phone: profile.phone,
-        location: profile.location,
-        currentTitle: profile.currentTitle,
-        experienceLevel: profile.experienceLevel,
-        yearsExperience: profile.yearsExperience,
-        skills: profile.skills,
-        industries: profile.industries,
-        workExperience: profile.workExperience,
-        education: profile.education,
-        jobTitlesSeeking: profile.jobTitlesSeeking,
-        remotePreference: profile.remotePreference,
-        preferredLocations: profile.preferredLocations,
-        salaryExpectation: profile.salaryExpectation,
-        linkedinUrl: profile.linkedinUrl,
-        portfolioUrl: profile.portfolioUrl,
-        workAuthorization: profile.workAuthorization,
-      };
-      const formData = new FormData();
-      formData.set("profile", JSON.stringify(profileInput));
-      if (resumeFile) formData.set("resume", resumeFile);
+  function buildProfileFormData(): FormData {
+    const profileInput: ProfileInput = {
+      fullName: profile.fullName,
+      phone: profile.phone,
+      location: profile.location,
+      currentTitle: profile.currentTitle,
+      experienceLevel: profile.experienceLevel,
+      yearsExperience: profile.yearsExperience,
+      skills: profile.skills,
+      industries: profile.industries,
+      workExperience: profile.workExperience,
+      education: profile.education,
+      jobTitlesSeeking: profile.jobTitlesSeeking,
+      remotePreference: profile.remotePreference,
+      preferredLocations: profile.preferredLocations,
+      salaryExpectation: profile.salaryExpectation,
+      linkedinUrl: profile.linkedinUrl,
+      portfolioUrl: profile.portfolioUrl,
+      workAuthorization: profile.workAuthorization,
+    };
+    const formData = new FormData();
+    formData.set("profile", JSON.stringify(profileInput));
+    if (resumeFile) formData.set("resume", resumeFile);
+    return formData;
+  }
 
-      const result = await saveProfile(formData);
+  // Shared by both Save Profile and Generate Resume — Generate always runs a save
+  // first so the generated PDF reflects whatever's on screen, not stale DB state.
+  // Deliberately does NOT touch saveState/generateError itself — those are owned by
+  // whichever action actually invoked this, so a Generate-triggered save doesn't
+  // show a stray "Profile saved." success banner underneath a Generate failure.
+  async function persistProfileCore() {
+    const result = await saveProfile(buildProfileFormData());
+    if (result.success && result.data) {
+      updateProfile({ resumePdfUrl: result.data.resumePdfUrl });
+      setResumePreviewUrl(result.data.resumePreviewUrl);
+      setResumeFile(null);
+    }
+    return result;
+  }
+
+  function handleSave() {
+    setGenerateError(null);
+    startTransition(async () => {
+      const result = await persistProfileCore();
       if (result.success) {
         setSaveState({ status: "success", message: "Profile saved." });
-        if (result.data) {
-          updateProfile({ resumePdfUrl: result.data.resumePdfUrl });
-          setResumePreviewUrl(result.data.resumePreviewUrl);
-        }
-        setResumeFile(null);
       } else {
         setSaveState({ status: "error", message: result.error ?? "Something went wrong." });
       }
     });
+  }
+
+  function handleGenerate() {
+    // Generate overwrites the single resumes/{user_id}/resume.pdf slot — including a
+    // manually-uploaded original, which has no other copy anywhere. Delete already
+    // confirms for the same reason; Generate needs the same guard.
+    const hasExistingResume = Boolean(profile.resumePdfUrl || resumeFile);
+    if (
+      hasExistingResume &&
+      !window.confirm("Generating a resume from your profile will replace your current resume file. Continue?")
+    ) {
+      return;
+    }
+
+    setGenerateError(null);
+    startGenerateTransition(async () => {
+      const saveResult = await persistProfileCore();
+      if (!saveResult.success) {
+        setGenerateError(saveResult.error ?? "Couldn't save your profile before generating. Please try again.");
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/resume/generate", { method: "POST" });
+        const result = await response.json();
+        if (!result.success) {
+          setGenerateError(result.error ?? "Resume generation failed. Please try again.");
+          return;
+        }
+        updateProfile({ resumePdfUrl: result.data.resumePdfUrl });
+        setResumePreviewUrl(result.data.resumePreviewUrl);
+        setIsGeneratedResume(true);
+      } catch (error) {
+        console.error("[ProfileForm]", error);
+        setGenerateError("Resume generation failed. Please try again.");
+      }
+    });
+  }
+
+  function handleResumeFileSelect(file: File) {
+    setResumeFile(file);
+    setIsGeneratedResume(false);
   }
 
   function handleExtract() {
@@ -206,6 +276,7 @@ export function ProfileForm({ initialProfile, initialResumePreviewUrl }: Props) 
         updateProfile({ resumePdfUrl: null });
         setResumePreviewUrl(null);
         setResumeFile(null);
+        setIsGeneratedResume(false);
         setSaveState({ status: "success", message: "Resume removed." });
       } else {
         setSaveState({ status: "error", message: result.error ?? "Failed to delete resume." });
@@ -224,12 +295,17 @@ export function ProfileForm({ initialProfile, initialResumePreviewUrl }: Props) 
         existingResumeUrl={profile.resumePdfUrl}
         previewUrl={resumePreviewUrl}
         pendingFile={resumeFile}
-        onFileSelect={setResumeFile}
+        onFileSelect={handleResumeFileSelect}
         onDelete={handleDeleteResume}
         isDeleting={isDeletingResume}
         onExtract={handleExtract}
         isExtracting={isExtracting}
         extractError={extractError}
+        isGeneratedResume={isGeneratedResume}
+        onGenerate={handleGenerate}
+        isGenerating={isGenerating}
+        generateError={generateError}
+        busy={isBusy}
       />
 
       <div className="rounded-2xl border border-border bg-surface p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]">
@@ -271,7 +347,7 @@ export function ProfileForm({ initialProfile, initialResumePreviewUrl }: Props) 
         <button
           type="button"
           onClick={handleSave}
-          disabled={isPending}
+          disabled={isBusy}
           className="mt-6 w-full rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isPending ? "Saving..." : "Save Profile"}

@@ -1,7 +1,8 @@
 import { PDFParse } from "pdf-parse";
 
 import { MAX_WORK_EXPERIENCE_ENTRIES } from "@/lib/constants";
-import { AI_MODEL, getVeniceClient } from "@/lib/venice-client";
+import { asNumber, asString, asStringArray } from "@/lib/json-normalize";
+import { callVeniceJson } from "@/lib/venice-json";
 import type { Education, ExperienceLevel, ExtractedProfileFields, WorkExperienceEntry } from "@/types";
 
 const MIN_EXTRACTED_TEXT_LENGTH = 50;
@@ -48,35 +49,17 @@ export async function extractProfileFromResume(buffer: Buffer): Promise<Extracti
     return { success: false, error: UNREADABLE_PDF_ERROR };
   }
 
-  let content: string | null;
-  try {
-    const response = await getVeniceClient().chat.completions.create({
-      model: AI_MODEL,
-      response_format: { type: "json_object" },
-      temperature: 0.3,
-      max_tokens: 800,
-      // @ts-expect-error Venice-specific extension, not in the OpenAI SDK's types
-      venice_parameters: { disable_thinking: true },
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: extractedText },
-      ],
-    });
-    content = response.choices[0].message.content;
-  } catch (error) {
-    console.error("[resume-extraction]", error);
+  const result = await callVeniceJson({
+    systemPrompt: SYSTEM_PROMPT,
+    userPrompt: extractedText,
+    temperature: 0.3,
+    maxTokens: 800,
+  });
+  if (!result.success) {
     return { success: false, error: EXTRACTION_FAILED_ERROR };
   }
 
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(content ?? "");
-  } catch (error) {
-    console.error("[resume-extraction]", error);
-    return { success: false, error: EXTRACTION_FAILED_ERROR };
-  }
-
-  return { success: true, data: normalizeExtractedFields(parsed) };
+  return { success: true, data: normalizeExtractedFields(result.data) };
 }
 
 // GLM 5.2's JSON output is trusted for shape but not for every key being present —
@@ -97,18 +80,6 @@ function normalizeExtractedFields(parsed: Record<string, unknown>): ExtractedPro
     workExperience: asWorkExperienceArray(parsed.workExperience),
     education: asEducation(parsed.education),
   };
-}
-
-function asString(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function asNumber(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function asStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function asExperienceLevel(value: unknown): ExperienceLevel | "" {
