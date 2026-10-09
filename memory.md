@@ -4,40 +4,48 @@ Last updated: 2026-10-09
 
 ## What was built
 
-**Session 13 — Features 11 and 12, general review, pushed to GitHub (commit a0aeed6 on origin/main, includes Feature 10)**
+**Session 14 — Feature 13, Company Research Agent (commit 985760c on local main; not yet pushed to origin)**
 
-- **Feature 11 (Filter + Sort + Pagination):** URL-driven state (`?q=&match=high|low&sort=newest|oldest&page=N`, defaults omitted). New `lib/job-query.ts` (`parseJobQuery`, `buildSearchFilter`, `buildJobsHref`, `JOBS_PAGE_SIZE = 20`). `app/find-jobs/page.tsx` does all filtering/sorting/paging server-side. `JobFilters.tsx` is a client component (300ms debounced search via `router.replace`, selects via `router.push`, any change resets to page 1, mirrors URL `q` back into the input on back/forward). `JobsPagination.tsx` is `<Link>`-based, takes a `query` prop, not a client component.
-- **Feature 12 (Job Details):** `app/find-jobs/[id]/page.tsx` (+ `not-found.tsx`, `error.tsx`) per `context/designs/job-details.png`. Components in `components/job-details/`: `JobInfo`, `MatchScore`, `JobDescription`, `CompanyResearch` (empty state), `JobActions`. New `JobDetail` type and `mapJobRowToDetail()`/`JOB_DETAIL_COLUMNS` in `lib/job-mapping.ts`. Find Jobs table company/role cells now link to `/find-jobs/{id}`. Content width `max-w-[844px]`.
-- Two `/review` passes plus a general review: all findings fixed. `ui-registry.md` and `progress-tracker.md` updated; tracker shows Feature 12 done, Feature 13 next.
+- `POST /api/agent/research` (`app/api/agent/research/route.ts`, `maxDuration = 120`): auth, load the user's job + profile, resolve company homepage, one Browserbase/Stagehand V4 session, Venice GLM 5.2 synthesis, save to `jobs.company_research`, `company_researched` PostHog event, per-user in-flight lock (409).
+- `lib/stagehand-model.ts`: Venice `generate` adapter for Stagehand (strict `json_schema` chat completions). `lib/company-url.ts`: homepage resolution. `agent/researcher.ts`: the browser session. `agent/research-synthesis.ts`: the 9-field dossier.
+- `CompanyDossier` type, `normalizeCompanyDossier()` and `company_research` in `lib/job-mapping.ts`. `components/job-details/CompanyResearch.tsx` is now a client component: Research/Re-run button, loading and error states, all 9 fields. `logAgentError` accepts a null `runId`.
+- `@browserbasehq/stagehand` installed and added to `serverExternalPackages` in `next.config.ts`. Docs updated: `library-docs.md` (V3 to V4 rewrite), `architecture.md`, `code-standards.md`, `build-plan.md`, `progress-tracker.md` (Feature 13 done, next is 14), `ui-registry.md`.
+- A `/review` found 8 issues; all resolved.
 
 ## Decisions made
 
-- **20 rows per page** (build-plan spec) over the mockup's 6 — developer-confirmed.
-- **Filter/sort/page state lives in the URL**, server component queries; no new API route.
-- **Out-of-range `?page=`:** PostgREST answers 416 with no count (verified live), so `page.tsx` re-queries page 1 for the total, then jumps to the true last page. Page capped at 100,000; `_` escaped in search; search input stripped of PostgREST filter syntax chars.
-- **Match badge is always green** on the details page (mockup shows a single 85% sample).
-- **Research Company button is intentionally `disabled`** ("Coming soon") with the active accent look until Feature 13.
-- **Navbar avatar icon from the job-details mockup was NOT added** — no other page has it and no destination is specified.
-- Job URLs are only linked if http(s) (they come from a third-party API).
+- **Stagehand + Venice question is answered:** V4 has no base-URL option, so custom providers go through `model: { generate }`. Our adapter works, verified live.
+- **Route is synchronous.** Stagehand's `extract()` runs in our process (the old "session runs independently" note was wrong). Browser deadline is 75s and a live run takes about 60s.
+- **Homepage discovery uses Browserbase Search**, accepting only a non-aggregator result whose domain matches the company name (e.g. Block, Inc. → block.xyz), then a `www.{slug}.com` guess. Adzuna's tracking links 403 automated requests, so the redirect can't be read. We never circumvent this, and the server never fetches employer URLs.
+- **If GLM synthesis fails twice, the route returns an error and saves nothing.** This is a deliberate exception to "always return a dossier", because a placeholder would look like real research and inflate "Companies Researched". Recorded in `build-plan.md`.
+- `sources` is only the pages the browser actually visited, never model-supplied. Scraped text goes to the LLM in delimited "untrusted data" blocks and the dossier renders as plain text.
+- The in-flight lock is in-memory per server instance (best-effort, accepted).
 
 ## Problems solved
 
-- **Truncated job descriptions are an Adzuna limit, not a bug:** the search API hard-caps `description` at 500 chars ending in `…`, and Adzuna's listing pages return 403 to automated fetches (don't circumvent). `JobDescription` shows the whole stored text plus a "preview" note and a "Read the full description" link to the original posting when it ends in `…`/`...`.
-- PostgREST `or(company.ilike.*x*,title.ilike.*x*)` syntax and the escaped-underscore form were confirmed accepted via a live request.
+- Turbopack can't bundle Stagehand (`new URL("../", import.meta.url)`), so it needs `serverExternalPackages`. **Don't `git stash` while `next dev` is running:** it briefly reverted `next.config.ts` and the dev server kept that state until the config was touched.
+- The installed Browserbase SDK names the session length option `api_timeout` (min 60s), not `timeout` as the docs page says. No project ID is needed anywhere.
+- Stagehand bundles its own zod 4.4.3, so types clash with ours. `extractTyped()` casts the schema in and re-validates with our zod.
+- The model rarely returns `pageLinks`, so sub-pages are also picked from DOM anchors by keyword.
+- A dead domain can load as Chrome's error page and the model will "extract" it. `gotoUsable()` requires a real HTTP response under 400.
+- Synthesis at 800 and 1500 `max_tokens` truncated the dossier, so it is now 2500 with a cap of 5 items per list.
 
 ## Current state
 
-- Features 01–12 complete and pushed. `tsc --noEmit` / `eslint .` clean. Only `memory.md` is uncommitted.
-- Verified visually via a scratch route + Playwright vs. the mockup (zero console errors) and unauthenticated gating (307 on `/find-jobs/{id}`). No real authenticated click-through of Features 10–12 has been done (sandbox has no OAuth session) — developer should try filters/search/out-of-range page/job details in their own browser.
-- "Low Match" filter will usually be empty since only scores >= 70 are persisted.
+- Features 01-13 complete; `tsc --noEmit` and `eslint .` clean. Commit 985760c is local only (a0aeed6 was the last pushed commit).
+- Verified live: the full pipeline on real DB jobs (Lendbuzz 3 sub-pages, TalentOla 1), Stripe, and the dead-domain path; the card renders in both states with no console errors; the unauthenticated route returns 401.
+- **Not verified:** a real authenticated click-through. The sandbox has no OAuth session, so the route's DB save and PostHog event were checked only by reading the code. The DB has 27 jobs, so you can test in your own browser.
+- `npm audit` shows 10 vulnerabilities (1 critical in Next.js itself), identical before and after the Stagehand install.
+- Browserbase Search has a limited free-plan allowance (one call per research click); failure falls back to the slug guess.
 
 ## Next session starts with
 
-Feature 13 — Company Research Agent (`build-plan.md`): `POST /api/agent/research` with Browserbase + Stagehand + Venice synthesis, saving the dossier to `jobs.company_research` and enabling the Research Company button / rendering the dossier in `CompanyResearch.tsx`. Run `/architect` first. First verify Stagehand + Venice compatibility (long-standing open question) and check whether `@browserbasehq/stagehand` and `lib/browserbase.ts`/`lib/stagehand.ts` need installing/creating, and that Browserbase env vars exist (don't record their values).
+1. Optionally try Research Company on a job at `/find-jobs/{id}` in your own browser (dossier appears, survives refresh, `company_researched` shows in PostHog), then push to origin if you want it there.
+2. Feature 14 — Dashboard Page, Full UI (`build-plan.md`): four stat cards, recent activity, three recharts charts with mock data, incomplete-profile banner. Run `/architect` first and read the design mockup in `context/designs/` if one exists.
 
 ## Open questions
 
-- Stagehand + Venice compatibility still unverified (blocks Feature 13 design).
-- Optionally use Feature 13's Browserbase session to fetch full job descriptions from the employer page (beyond Adzuna's 500-char preview) — developer to decide.
-- Whether to add the mockup's navbar avatar icon.
-- Long-standing: RLS cross-user isolation only structurally verified; no live-authenticated-session verification possible in this sandbox.
+- Whether to push 985760c to GitHub.
+- Whether the mockup's navbar avatar icon should be added (carried over, still undecided).
+- Optionally use the Browserbase session to fetch full job descriptions from the employer page, beyond Adzuna's 500-char preview (carried over).
+- Long-standing: RLS cross-user isolation only structurally verified; no live authenticated session in this sandbox.
