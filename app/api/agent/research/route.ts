@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
 
     const { data: updatedRows, error: updateError } = await insforge.database
       .from("jobs")
-      .update({ company_research: dossier })
+      .update({ company_research: dossier, researched_at: new Date().toISOString() })
       .eq("id", job.id)
       .eq("user_id", user.id)
       .select("id");

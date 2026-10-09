@@ -323,6 +323,7 @@ Approved dependencies for this project:
 - `pdf-parse` — Extract text from uploaded PDF
 - `zod` — Schema validation
 - `lucide-react` — Icons
+- `recharts` — Dashboard charts (client components only)
 - `tailwindcss` — Styling
 - `shadcn/ui` components — UI primitives
 

@@ -1,3 +1,4 @@
+import { LayoutDashboard, Search, User } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -9,9 +10,9 @@ type Props = {
 };
 
 const navLinks = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/find-jobs", label: "Find Jobs" },
-  { href: "/profile", label: "Profile" },
+  { href: "/dashboard", label: "Dashboard", Icon: LayoutDashboard },
+  { href: "/find-jobs", label: "Find Jobs", Icon: Search },
+  { href: "/profile", label: "Profile", Icon: User },
 ];
 
 export function Navbar({ isAuthenticated, activeRoute }: Props) {
@@ -29,20 +30,27 @@ export function Navbar({ isAuthenticated, activeRoute }: Props) {
           />
         </Link>
 
-        <nav className="hidden items-center gap-8 md:flex">
-          {navLinks.map((link) => {
-            const isActive = isAuthenticated && link.href === activeRoute;
+        <nav className={`hidden items-center md:flex ${isAuthenticated ? "ml-auto mr-4 h-full gap-2" : "gap-8"}`}>
+          {navLinks.map(({ href, label, Icon }) => {
+            const isActive = isAuthenticated && href === activeRoute;
+            if (!isAuthenticated) {
+              return (
+                <Link key={href} href={href} className="text-sm font-medium text-text-dark hover:text-accent">
+                  {label}
+                </Link>
+              );
+            }
             return (
               <Link
-                key={link.href}
-                href={link.href}
-                className={
-                  isActive
-                    ? "text-sm font-medium text-accent"
-                    : "text-sm font-medium text-text-dark hover:text-accent"
-                }
+                key={href}
+                href={href}
+                className={`relative flex h-full items-center gap-2 px-4 text-sm font-medium ${
+                  isActive ? "text-accent" : "text-text-dark hover:text-accent"
+                }`}
               >
-                {link.label}
+                <Icon className={`h-5 w-5 ${isActive ? "" : "text-text-muted"}`} aria-hidden />
+                {label}
+                {isActive && <span aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" />}
               </Link>
             );
           })}
