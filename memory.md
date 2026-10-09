@@ -1,55 +1,43 @@
 # Memory — JobPilot Build Progress
 
-Last updated: 2026-09-16
+Last updated: 2026-10-09
 
 ## What was built
 
-**Session 10 — Feature 08 (Resume PDF Generation from Profile): architected, implemented, code-reviewed, all findings fixed, and shipped**
+**Session 13 — Features 11 and 12, general review, pushed to GitHub (commit a0aeed6 on origin/main, includes Feature 10)**
 
-- Ran `/architect` to lock four decisions before building: (1) auto-save-then-generate — clicking Generate always runs the same save path as Save Profile first, so the PDF reflects what's on screen, not stale DB state; (2) a hard minimum before generating (non-empty `fullName` + at least one work-experience entry with a non-blank title/company); (3) content split — GLM only writes the summary paragraph + polishes each role's `responsibilities` into bullets, company/title/dates/education/skills render straight from the DB, never round-tripped through the model; (4) a fixed single-page PDF layout built from scratch (no mockup exists for the generated PDF itself).
-- Implemented: `lib/resume-generation.ts` (Venice call), `lib/resume-pdf.tsx` (`@react-pdf/renderer` template), `app/api/resume/generate/route.ts`, wired the previously-stub "Generate Resume from Profile" button in `ResumeUpload.tsx`/`ProfileForm.tsx`.
-- Installed `@react-pdf/renderer@4.9.0` (approved but never actually installed, same situation `pdf-parse` was in before Feature 07) — its documented API matched the installed version exactly this time, and no `serverExternalPackages` entry was needed (verified live, no Turbopack bundling issue). Separately discovered the installed `@insforge/sdk`'s `storage.upload()` is actually `(path, File | Blob)` only — no options object, no `contentType`/`upsert` flags — `library-docs.md`'s Storage section was wrong and got corrected.
-- Ran a full multi-angle `/code-review` (8 finder agents) + manual `/review` in parallel, then fixed every finding:
-  - **Critical**: Generate silently overwrote a user's manually-uploaded original resume with zero confirmation (same storage slot as Delete, which does confirm) — added `window.confirm()`.
-  - **Important**: Generate-triggered auto-save was writing to the same `saveState` the Save button's banner reads, causing a contradictory "Profile saved." + red generate-error to show together on every real generate failure — split `persistProfile` into a state-free core.
-  - **Important**: no cross-locking between Save/Delete/Extract/Generate (4 independent `useTransition`s) allowed concrete races, e.g. Delete finishing mid-Generate and being silently resurrected by Generate's own upload — added one shared `isBusy` flag gating all four.
-  - **Important**: missing `revalidatePath("/profile")` in the generate route (every other mutation has it) — added.
-  - **Important**: blank work-experience entries passed the minimum-content gate and would leak garbage into the Venice prompt/PDF — route now filters to non-blank entries before both the gate and generation.
-  - **Important**: Extract-after-Generate feedback loop (extracting from the AI's own just-generated PDF) — added an `isGeneratedResume` flag that disables Extract until the user uploads their own file again.
-  - **Important**: GLM's bullets were zipped onto `profile.workExperience` by array index with no verification — added a title/company echo-back + match check, with a naive-sentence-split fallback on mismatch.
-  - **Important**: duplication cluster (profile-fetch logic ×3, upload/sign sequence, Venice call-and-parse scaffold, JSON coercion helpers) — extracted `lib/profile-server.ts`, `lib/resume-storage.ts`, `lib/venice-json.ts` (also now distinguishes a `finish_reason: "length"` truncation from a real parse failure), `lib/json-normalize.ts`; migrated Feature 07's `lib/resume-extraction.ts` onto the shared ones too.
-  - **Important**: `ui-tokens.md`'s "never hardcode hex" invariant had no exception for non-DOM renderers (react-pdf can't consume CSS variables at all) — added an explicit documented carve-out, same category as the existing border-radius exception, and swapped `resume-pdf.tsx`'s inline hex for named constants mirroring real tokens.
-  - **Minor**: sequential DB-update + sign-URL calls in the route parallelized via `Promise.all`.
-- Re-verified everything live afterward, not just `tsc`/`eslint`: the generation pipeline (including a deliberately-blank role fed directly to the normalizer to confirm graceful fallback), the refactored extraction pipeline (to confirm the shared-helper migration didn't regress Feature 07), and the new `busy`/`isGeneratedResume` UI gating via a Playwright scratch harness.
-- `progress-tracker.md`/`ui-registry.md` updated throughout, including a full writeup of the review-fix pass.
+- **Feature 11 (Filter + Sort + Pagination):** URL-driven state (`?q=&match=high|low&sort=newest|oldest&page=N`, defaults omitted). New `lib/job-query.ts` (`parseJobQuery`, `buildSearchFilter`, `buildJobsHref`, `JOBS_PAGE_SIZE = 20`). `app/find-jobs/page.tsx` does all filtering/sorting/paging server-side. `JobFilters.tsx` is a client component (300ms debounced search via `router.replace`, selects via `router.push`, any change resets to page 1, mirrors URL `q` back into the input on back/forward). `JobsPagination.tsx` is `<Link>`-based, takes a `query` prop, not a client component.
+- **Feature 12 (Job Details):** `app/find-jobs/[id]/page.tsx` (+ `not-found.tsx`, `error.tsx`) per `context/designs/job-details.png`. Components in `components/job-details/`: `JobInfo`, `MatchScore`, `JobDescription`, `CompanyResearch` (empty state), `JobActions`. New `JobDetail` type and `mapJobRowToDetail()`/`JOB_DETAIL_COLUMNS` in `lib/job-mapping.ts`. Find Jobs table company/role cells now link to `/find-jobs/{id}`. Content width `max-w-[844px]`.
+- Two `/review` passes plus a general review: all findings fixed. `ui-registry.md` and `progress-tracker.md` updated; tracker shows Feature 12 done, Feature 13 next.
 
 ## Decisions made
 
-- **Feature 08 scope/shape** — see the four `/architect` decisions above; all locked in and reflected in the shipped code.
-- **Single resume storage slot is intentional** (`resumes/{user_id}/resume.pdf`, per `architecture.md`) — both manual upload and AI-generation write to the same key. This is correct per spec, but it's why Generate needed its own confirm dialog once the overwrite risk was surfaced.
-- **`lib/resume-storage.ts` shares the upload+sign steps but NOT the DB update** between `actions/profile.ts` and the generate route — they have genuinely different update semantics (whole-profile update vs. single-field update), not worth forcing into one function.
-- **Shared Venice/JSON helpers return typed failure reasons, never hardcoded error strings** — each caller (`resume-extraction.ts`/`resume-generation.ts`) keeps its own user-facing copy. Keeps the "please try again" wording feature-specific while still sharing the actual scaffold.
+- **20 rows per page** (build-plan spec) over the mockup's 6 — developer-confirmed.
+- **Filter/sort/page state lives in the URL**, server component queries; no new API route.
+- **Out-of-range `?page=`:** PostgREST answers 416 with no count (verified live), so `page.tsx` re-queries page 1 for the total, then jumps to the true last page. Page capped at 100,000; `_` escaped in search; search input stripped of PostgREST filter syntax chars.
+- **Match badge is always green** on the details page (mockup shows a single 85% sample).
+- **Research Company button is intentionally `disabled`** ("Coming soon") with the active accent look until Feature 13.
+- **Navbar avatar icon from the job-details mockup was NOT added** — no other page has it and no destination is specified.
+- Job URLs are only linked if http(s) (they come from a third-party API).
 
 ## Problems solved
 
-- `@insforge/sdk`'s real `storage.upload()` signature (`(path, File | Blob)`, no options object) didn't match `library-docs.md`'s documented `(path, buffer, {contentType, upsert})` example — corrected. A generated `Buffer` also isn't a valid `BlobPart` under this project's strict TS config; wrap in `new Blob([new Uint8Array(buffer)])` first.
-- Contradictory success/error banner bug (see Important findings above) — root cause was one shared `saveState` used by two different actions; fixed by giving each its own state ownership.
-- Positional-mismatch risk in AI-generated bullets — fixed with an echo-back verification + fallback, not just trusting prompt instructions.
-- Everything else listed under "Important"/"Critical" above.
+- **Truncated job descriptions are an Adzuna limit, not a bug:** the search API hard-caps `description` at 500 chars ending in `…`, and Adzuna's listing pages return 403 to automated fetches (don't circumvent). `JobDescription` shows the whole stored text plus a "preview" note and a "Read the full description" link to the original posting when it ends in `…`/`...`.
+- PostgREST `or(company.ilike.*x*,title.ilike.*x*)` syntax and the escaped-underscore form were confirmed accepted via a live request.
 
 ## Current state
 
-- Feature 08 (Resume PDF Generation from Profile) is fully complete: implemented, multi-angle reviewed, all findings fixed, re-verified live, committed and pushed (see next steps below — commit was requested this session, confirm it landed).
-- `progress-tracker.md` shows Feature 08 as last completed, Feature 09 (Find Jobs Page — Full UI) next, entering Phase 3.
-- `tsc --noEmit`/`eslint .` clean. No known open bugs.
+- Features 01–12 complete and pushed. `tsc --noEmit` / `eslint .` clean. Only `memory.md` is uncommitted.
+- Verified visually via a scratch route + Playwright vs. the mockup (zero console errors) and unauthenticated gating (307 on `/find-jobs/{id}`). No real authenticated click-through of Features 10–12 has been done (sandbox has no OAuth session) — developer should try filters/search/out-of-range page/job details in their own browser.
+- "Low Match" filter will usually be empty since only scores >= 70 are persisted.
 
 ## Next session starts with
 
-Feature 09 — Find Jobs Page — Full UI (`build-plan.md`'s first item under Phase 3, mockup at `context/designs/find-jobs.png`). This is a UI-only phase (no logic yet, per the project's "mock data first" build principle) — search controls card, jobs table with match-score bars, filter bar, pagination. No `/architect` blocker expected here (mirrors Feature 05's pattern), but check `ui-rules.md`/`ui-tokens.md` for match-score color-band rules before building the table.
+Feature 13 — Company Research Agent (`build-plan.md`): `POST /api/agent/research` with Browserbase + Stagehand + Venice synthesis, saving the dossier to `jobs.company_research` and enabling the Research Company button / rendering the dossier in `CompanyResearch.tsx`. Run `/architect` first. First verify Stagehand + Venice compatibility (long-standing open question) and check whether `@browserbasehq/stagehand` and `lib/browserbase.ts`/`lib/stagehand.ts` need installing/creating, and that Browserbase env vars exist (don't record their values).
 
 ## Open questions
 
-- None specific to Feature 08 remain.
-- Long-standing, unchanged: RLS cross-user isolation (Feature 04) still only structurally verified, not empirically tested — sandbox limitation (`run-raw-sql` always executes as `postgres`, bypasses RLS).
-- Stagehand + Venice compatibility still unverified — relevant only once Feature 13 (Company Research Agent) is built.
-- The concurrent-click races fixed this session (Delete-during-Generate, Save-during-Generate) were fixed structurally (shared `isBusy` lock) but never reproduced against a live authenticated session — no OAuth session obtainable in this sandbox, same limitation as every prior DB-writing feature.
+- Stagehand + Venice compatibility still unverified (blocks Feature 13 design).
+- Optionally use Feature 13's Browserbase session to fetch full job descriptions from the employer page (beyond Adzuna's 500-char preview) — developer to decide.
+- Whether to add the mockup's navbar avatar icon.
+- Long-standing: RLS cross-user isolation only structurally verified; no live-authenticated-session verification possible in this sandbox.
