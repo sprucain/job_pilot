@@ -65,3 +65,43 @@ export type ExtractedProfileFields = {
   workExperience: Omit<WorkExperienceEntry, "id">[];
   education: Education;
 };
+
+// Matches architecture.md's `jobs.source` CHECK constraint exactly — never any
+// other value.
+export type JobSource = "search" | "url";
+
+// Only the fields the Find Jobs table (Feature 09) renders — company, role,
+// match score, salary, source, and a display-ready "date found" string. This is
+// mock data for now; Feature 10 (Adzuna Job Discovery) will introduce the full
+// `jobs` table shape (about_role, requirements, company_research, etc. per
+// architecture.md) once the job details/research pages that need those fields
+// are actually built.
+export type Job = {
+  id: string;
+  company: string;
+  title: string;
+  matchScore: number;
+  salary: string;
+  source: JobSource;
+  foundAt: string;
+};
+
+// Everything the Job Details page (Feature 12) renders. Separate from `Job` (the Find Jobs
+// table row) so the table keeps loading only the 6 columns it shows — descriptions and
+// skill arrays are fetched only for the single job being viewed.
+export type JobDetail = {
+  id: string;
+  company: string;
+  title: string;
+  matchScore: number;
+  matchReason: string;
+  matchedSkills: string[];
+  missingSkills: string[];
+  salary: string;
+  location: string;
+  jobType: string;
+  foundAt: string;
+  description: string;
+  jobPostUrl: string | null;
+  applyUrl: string | null;
+};

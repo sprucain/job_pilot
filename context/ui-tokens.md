@@ -155,14 +155,15 @@ Used for: primary buttons, active nav items, match score bars, tailored badge, f
 
 ### Match Score Colors
 
-Match score bars and indicators use gradient stops based on score range:
+**Corrected during Feature 09 (2026-09-16):** the table below was internally inconsistent with `ui-rules.md`'s own Match Score Bar section, and neither matched the actual mockup — confirmed by sampling exact pixel colors from `context/designs/find-jobs.png` (94/96/91% = `#00BC7D`, 88/85% = `#2B7FFF`, 72% = `#FF8904`). The real bar-fill scheme has 3 tiers, not 4, and uses the `-alt`/`-medium` token variants, not the base `success`/`info` tokens:
 
-| Score Range | Color  | Token                                  |
-| ----------- | ------ | -------------------------------------- |
-| 90-100%     | Green  | `text-success` / `bg-success-lightest` |
-| 70-89%      | Green  | `text-success` / `bg-success-light`    |
-| 50-69%      | Orange | `text-warning`                         |
-| Below 50%   | Gray   | `text-text-muted`                      |
+| Score Range | Color  | Token            |
+| ----------- | ------ | ----------------- |
+| 90-100%     | Green  | `bg-success-alt` |
+| 80-89%      | Blue   | `bg-info-medium` |
+| Below 80%   | Orange | `bg-warning`     |
+
+The percentage number itself (e.g. "94%") is never color-coded — it always renders in `text-text-primary`, regardless of score. Implemented in `lib/match-score.ts`'s `getMatchScoreBarClass()` — always import from there rather than re-deriving these thresholds at a call site.
 
 ### Skills Badges
 
@@ -173,10 +174,12 @@ Match score bars and indicators use gradient stops based on score range:
 
 ### Source Badges
 
-| Source   | Background             | Text                  |
-| -------- | ---------------------- | --------------------- |
-| LinkedIn | `bg-linkedin-light`    | `text-linkedin`       |
-| URL      | `bg-surface-secondary` | `text-text-secondary` |
+**Corrected during Feature 09's `/review` follow-up (2026-09-16):** this table listed "LinkedIn" as a source, but `architecture.md`'s actual `jobs.source` CHECK constraint only allows `'search'` or `'url'` — LinkedIn was never a valid value anywhere in the schema. No mockup covers this badge (`find-jobs.png`'s table omits the Source column entirely), so these are new token choices, not mockup-derived ones. `lib/job-source.ts`'s `getSourceBadgeLabel()`/`getSourceBadgeClass()` are the single source of truth — import from there.
+
+| Source | Background              | Text                   |
+| ------ | ------------------------ | ----------------------- |
+| Search | `bg-info-lightest`      | `text-info-foreground` |
+| URL    | `bg-surface-secondary`  | `text-text-secondary`  |
 
 ### Status Badges
 

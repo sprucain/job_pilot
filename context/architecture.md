@@ -264,6 +264,8 @@ URL saved to profiles table
 | company_research   | jsonb       | Company dossier from research agent            |
 | found_at           | timestamptz |                                                |
 
+**Unique index (added Feature 10, 2026-09-24):** `jobs_user_id_source_url_key` — a plain (non-partial) unique index on `(user_id, source_url)`. Adzuna Job Discovery upserts with `ignoreDuplicates: true` against this index so a listing already saved by an earlier or concurrent search is skipped atomically at the database level, rather than relying on an in-app pre-check that can race or silently degrade on a failed read.
+
 ### `agent_logs`
 
 | Column     | Type        | Notes                            |

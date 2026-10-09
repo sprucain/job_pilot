@@ -163,11 +163,15 @@ border-radius: 9999px
 background track: #E7EAF3
 ```
 
+**Corrected during Feature 09 (2026-09-16)** — the thresholds/hex values below were wrong; the real scheme was reverse-engineered from exact pixel colors in `context/designs/find-jobs.png`. See `ui-tokens.md`'s Match Score Colors section for the authoritative token table and `lib/match-score.ts`'s `getMatchScoreBarClass()` for the implementation.
+
 Fill color by score:
 
-- 80-100%: `#10B981` (green)
-- 60-79%: `#61A8FF` (blue)
-- Below 60%: `#FF8904` (orange)
+- 90-100%: `#00BC7D` (`bg-success-alt`)
+- 80-89%: `#2B7FFF` (`bg-info-medium`)
+- Below 80%: `#FF8904` (`bg-warning`)
+
+The percentage number next to the bar is never color-coded — always `text-text-primary`.
 
 ---
 

@@ -269,9 +269,11 @@ All environment variables defined in `.env.local` for development. Never hardcod
 The job match threshold is defined once as a constant. Never hardcode this value anywhere else.
 
 ```typescript
-// lib/utils.ts
+// lib/constants.ts
 export const MATCH_THRESHOLD = 70;
 ```
+
+**Corrected during Feature 10 (2026-09-24):** `lib/utils.ts` was never created — this project's established home for shared constants is `lib/constants.ts` (`MAX_RESUME_SIZE_BYTES`, `MAX_WORK_EXPERIENCE_ENTRIES`, etc., all added there in earlier features). `MATCH_THRESHOLD` lives there too.
 
 Import and use `MATCH_THRESHOLD` everywhere this value is needed.
 
