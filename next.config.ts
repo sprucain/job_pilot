@@ -4,8 +4,9 @@ const nextConfig: NextConfig = {
   /* config options here */
   // pdf-parse bundles pdfjs-dist, which spins up a worker via a relative import
   // Turbopack can't resolve once bundled — opt it out of Server Components
-  // bundling so it loads through native Node `require` instead.
-  serverExternalPackages: ["pdf-parse"],
+  // bundling so it loads through native Node `require` instead. Stagehand has the
+  // same problem (`new URL("../", import.meta.url)` for its extension assets).
+  serverExternalPackages: ["pdf-parse", "@browserbasehq/stagehand"],
   async rewrites() {
     return [
       {

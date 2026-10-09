@@ -56,7 +56,7 @@ export default async function JobDetailsPage({ params }: Props) {
           <JobInfo job={job} />
           <MatchScore job={job} />
           <JobDescription description={job.description} jobPostUrl={job.jobPostUrl} />
-          <CompanyResearch company={job.company} />
+          <CompanyResearch jobId={job.id} company={job.company} dossier={job.companyResearch} />
           <JobActions company={job.company} applyUrl={job.applyUrl} />
         </div>
       </main>

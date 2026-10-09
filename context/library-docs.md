@@ -281,111 +281,48 @@ const jobRecord = {
 
 ---
 
-## Browserbase
+## Browserbase + Stagehand (V4)
 
-**Check first:** Check AGENTS.md for an installed Browserbase skill. If a Browserbase MCP server is configured — use it. The skill/MCP will have the latest session management and API patterns.
-
-### Session Creation — Company Research
+**Check first:** Read the current V4 pages from https://docs.stagehand.dev/llms.txt and the installed declarations in `node_modules/@browserbasehq/stagehand/dist/index.d.mts` — they are the source of truth (the docs page and the installed SDK have disagreed before; see `api_timeout` below). **Corrected during Feature 13 (2026-10-09):** this section used to describe the V3 API (`projectId`, `env: "BROWSERBASE"`, `stagehand.init()`, a GPT-4o key) — none of that applies.
 
 ```typescript
-import Browserbase from "@browserbasehq/sdk";
+import { browserbase, Stagehand } from "@browserbasehq/stagehand";
+import { veniceStagehandModel } from "@/lib/stagehand-model";
 
-const bb = new Browserbase({ apiKey: process.env.BROWSERBASE_API_KEY! });
-
-// Single session for company research — sequential page visits
-const session = await bb.sessions.create({
-  projectId: process.env.BROWSERBASE_PROJECT_ID!,
-  timeout: 120, // 2 minute session — visits 3-4 pages max
+const browser = await browserbase.launch({
+  apiKey: process.env.BROWSERBASE_API_KEY!, // read it yourself — Stagehand doesn't load env files
+  api_timeout: 120, // session length in seconds (min 60). NOT `timeout` — the installed SDK names it api_timeout
 });
-```
-
-**Important — Browserbase runs independently from your Next.js server:**
-Browserbase sessions run on Browserbase's cloud infrastructure, not inside your Next.js API route. The API route triggers the Browserbase session and returns a response while the session continues running independently on Browserbase's platform. Do not add `maxDuration` or any timeout configuration to Next.js API routes to accommodate Browserbase session length.
-
-**Rules:**
-
-- Always use single sessions — never parallel sessions (free plan limit)
-- Session timeout is 120 seconds — sufficient for 3-4 page visits
-- Always end sessions cleanly — call stagehand.close() when done
-- Project ID always from `process.env.BROWSERBASE_PROJECT_ID` — never hardcode
-- Browserbase client lives in `lib/browserbase.ts` — always import from there
-
----
-
-## Stagehand
-
-**Check first:** Check AGENTS.md for an installed Stagehand skill. If a Stagehand MCP server is configured — use it. The skill/MCP will have the latest act() and extract() patterns.
-
-### Initialisation
-
-```typescript
-import { Stagehand } from "@browserbasehq/stagehand";
-
-const stagehand = new Stagehand({
-  env: "BROWSERBASE",
-  apiKey: process.env.BROWSERBASE_API_KEY!,
-  projectId: process.env.BROWSERBASE_PROJECT_ID!,
-  browserbaseSessionID: session.id,
-  // NOT swapped to Venice/GLM 5.2 as part of the project-wide Venice migration —
-  // Stagehand takes a `modelName` string + apiKey, not an arbitrary OpenAI-compatible
-  // baseURL, and whether it supports Venice at all is unverified. Feature 13 (Company
-  // Research Agent) isn't built yet — confirm Stagehand/Venice compatibility before
-  // building it, rather than assuming this line can just be swapped like the raw
-  // `openai` SDK call sites were.
-  model: { modelName: "openai/gpt-4o", apiKey: process.env.OPENAI_API_KEY! },
-  disablePino: true,
-});
-
-await stagehand.init();
-const page = stagehand.context.activePage()!;
-```
-
-### extract()
-
-```typescript
-import { z } from "zod";
-
-const result = await stagehand.extract({
-  instruction:
-    "Extract the company overview, main product description, and any technology mentions from this page.",
-  schema: z.object({
-    companyOverview: z.string().optional(),
-    mainProduct: z.string().optional(),
-    techMentions: z.array(z.string()).optional(),
-    navLinks: z
-      .array(
-        z.object({
-          label: z.string(),
-          url: z.string(),
-        }),
-      )
-      .optional(),
-  }),
-});
-```
-
-### act()
-
-```typescript
-// Always wrap in try/catch
 try {
-  await stagehand.act({
-    action: "Click the About link in the navigation",
-  });
-} catch (error) {
-  await logAgentError(jobId, null, error);
+  const stagehand = await Stagehand.create({ browser, model: veniceStagehandModel });
+  try {
+    const [page] = await browser.context.pages();
+    const ok = (await page.goto(url, { waitUntil: "domcontentloaded" }))?.status() ?? 0;
+    const { data } = await stagehand.extract(instruction, schema);
+  } finally {
+    await stagehand.close();
+  }
+} finally {
+  await browser.close(); // terminates the Browserbase session
 }
 ```
 
-## Company Research Section
+**Rules:**
 
-Replace the existing Stagehand "Company Research Pattern" section in library-docs.md with this:
-
----
+- The only secret is `BROWSERBASE_API_KEY`. **No `BROWSERBASE_PROJECT_ID`, no `projectId`** — the key resolves the project.
+- Single session at a time (free plan). `agent/researcher.ts` is the only place a session is opened; close in `finally`, never leave one open.
+- **The browser work runs inside our Next.js route**, not on Browserbase's side: `extract()` calls execute in our process, so the research route is synchronous with `maxDuration = 120` and an internal 75s deadline. (The old "route returns while the session keeps running" note was wrong.)
+- Add `@browserbasehq/stagehand` to `serverExternalPackages` in `next.config.ts` — Turbopack can't bundle its `new URL("../", import.meta.url)`.
+- **Model = Venice via `lib/stagehand-model.ts`.** V4 has no base-URL option; custom providers use `model: { generate }`. The adapter forwards Stagehand's structured requests to GLM 5.2 as strict `json_schema` chat completions with `disable_thinking` (verified live). Text-only: no screenshots.
+- Stagehand bundles its own zod (4.4.3), so our schemas don't type-check against `extract()` directly — use the `extractTyped()` wrapper in `agent/researcher.ts` (cast in, re-validate with our zod).
+- A failed navigation can resolve to Chrome's error page instead of throwing, and the model will "extract" it — only read a page after a real HTTP response `< 400` (`gotoUsable()`).
+- Wrap every `extract()` in try/catch; research must never throw out of `researchCompanySite()`.
+- Never fetch employer URLs from our server — Adzuna's tracking links 403 automated requests (don't circumvent), so `lib/company-url.ts` finds the employer's site with `browserbase.search()` (accepting only a non-aggregator result whose domain matches the company name) and falls back to a `www.{slug}.com` guess. Browsing the employer site is the browser's job.
+- Agent functions return `{ success, ... }` — `researchCompanySite()` adds `empty: boolean` to tell "site had nothing usable" from a real failure.
 
 ### Company Research Pattern
 
-Three-step process: homepage extraction → sub-page extraction → GPT-4o synthesis.
+Three-step process: homepage extraction → sub-page extraction → GLM 5.2 synthesis.
 Job description and user profile come from DB — never re-fetch what you already have.
 Browser's only job is the company website.
 
@@ -446,7 +383,7 @@ const subPageData = await stagehand.extract({
   }),
 });
 
-// Step 3 — GPT-4o synthesis (after browser closes)
+// Step 3 — GLM 5.2 synthesis (after browser closes) — see agent/research-synthesis.ts, the source of truth
 // Feed three data sources: company research + job from DB + profile from DB
 const systemPrompt = `You are a sharp career strategist preparing a candidate to apply for a specific role. You are given (a) research collected from the company's own website, (b) the job posting, and (c) the candidate's profile. Produce a concise, concrete briefing that gives this specific candidate an edge for this specific role.
 
@@ -518,9 +455,10 @@ const response = await getVeniceClient().chat.completions.create({
 - Always use `extract()` with a Zod schema — never parse raw HTML or use regex
 - Always wrap every `act()` and `extract()` in try/catch
 - Always call `await stagehand.close()` when done — ends the Browserbase session
-- Model is always `gpt-4o` — never use other models
+- Synthesis model is always `AI_MODEL` (Venice GLM 5.2) via `callVeniceJson`; Stagehand extraction uses the same model through `veniceStagehandModel`
 - Temperature is `0.4` for synthesis — grounded but flexible enough to make real connections
-- Max 3 sub-pages — never exceed this on free plan
+- Max 3 sub-pages — never exceed this on free plan; the model rarely returns `pageLinks`, so links are also read from DOM anchors by keyword
+- `sources` in the dossier is only the pages actually visited — never model-supplied. Scraped text goes into delimited data blocks (escape `<`) with an "untrusted data" instruction
 - Always close session in finally block — never leave sessions open even if research fails
 - Job description and profile always come from DB — never re-fetch via browser
 - If browser research returns empty — still run synthesis with job + profile only
@@ -585,13 +523,14 @@ Confirmed by live testing during setup: without it, the model returns a separate
 
 **Temperature settings:**
 
-- `0.3` — matching, scoring, extraction, research synthesis — deterministic results
+- `0.3` — matching, scoring, extraction — deterministic results
+- `0.4` — company research synthesis — grounded but flexible
 - `0.7` — resume generation — natural variation
 
 **Max tokens:**
 
 - Job matching + scoring: `300`
-- Company research synthesis: `800`
+- Company research synthesis: `2500` (800 and 1500 both truncated the 9-field dossier)
 - Resume generation: `1000`
 - Profile extraction from resume: `800`
 

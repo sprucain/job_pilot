@@ -104,4 +104,20 @@ export type JobDetail = {
   description: string;
   jobPostUrl: string | null;
   applyUrl: string | null;
+  companyResearch: CompanyDossier | null;
+};
+
+// The 9-field dossier GLM 5.2 synthesises for Feature 13 (Company Research Agent) and the
+// shape stored in `jobs.company_research` (jsonb). `sources` is the list of pages the browser
+// actually visited — never model-supplied.
+export type CompanyDossier = {
+  companyOverview: string;
+  techStack: string[];
+  culture: string[];
+  whyThisRole: string;
+  yourEdge: string[];
+  gapsToAddress: string[];
+  smartQuestions: string[];
+  interviewPrep: string[];
+  sources: string[];
 };

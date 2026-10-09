@@ -247,13 +247,11 @@ Agent researches the company using their public website and builds a structured 
 - POST /api/agent/research receives jobId
 - Load job data from DB — extract company_name, job description, matched_skills, missing_skills
 - Load user profile from DB — skills, experience, work history
-- Derive company homepage URL by following the Adzuna redirect with server-side fetch() — no browser needed for this step:
-  - fetch(redirect_url, { redirect: "follow" }) follows HTTP redirects natively before the browser opens
-  - Use response.url as the real employer job page URL
-  - Strip subdomain from response.url hostname (e.g. jobs.stripe.com → stripe.com)
-  - Construct homepage URL as https://{rootDomain}
-  - If response.url still contains "adzuna.com" or fetch throws — fall back to https://www.{company}.com (company name from DB)
-  - If Stagehand gets no meaningful content (oneLiner and productSummary empty) — skip browser research entirely, proceed to GLM 5.2 synthesis with job description and profile only
+- Derive the company homepage URL (**changed during Feature 13** — the original plan followed the Adzuna redirect with a server-side `fetch()`, but Adzuna answers every automated request with 403, so the employer can't be read from it):
+  - Browserbase Search (`browserbase.search()` with `"{company} official website"`, 5 results, 8s timeout) — take the first result that is not a job board/aggregator/social site **and** whose domain name visibly matches the company name (Block, Inc. → block.xyz); use `https://{rootDomain}`
+  - If search fails, is rate-limited, or finds no matching domain — fall back to `https://www.{company-slug}.com` (company name lowercased, suffixes like Inc/LLC/Ltd removed)
+  - This server never fetches employer URLs itself — only the Browserbase browser does
+  - If the page returns no usable HTTP response (>= 400), or Stagehand gets no meaningful content (oneLiner and productSummary empty) — skip browser research entirely, proceed to GLM 5.2 synthesis with job description and profile only
 - Open single Browserbase session with Stagehand
   **Stagehand homepage extraction:**
 
@@ -365,7 +363,7 @@ Temperature: 0.4
 ```
 
 - Save complete dossier to jobs.company_research jsonb column
-- Always return a dossier — never fail silently. If browser research failed, GLM 5.2 synthesizes from job description and profile alone.
+- Always return a dossier — never fail silently. If browser research failed, GLM 5.2 synthesizes from job description and profile alone. **Deliberate exception (Feature 13):** if the GLM 5.2 synthesis itself fails twice (or truncates), the route returns an error and saves nothing — a deterministic placeholder dossier would look like real research, inflate the "Companies Researched" stat, and block nothing (the user can simply retry).
   **PostHog event:** `company_researched` — { userId, jobId, company }
 
 ---

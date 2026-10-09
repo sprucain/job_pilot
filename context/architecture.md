@@ -328,13 +328,7 @@ Note: `@insforge/ssr` is not a real package — the SSR helpers are subpath expo
 
 ## Browserbase Session Pattern
 
-```typescript
-// Company research session — single session, sequential page visits
-const session = await bb.sessions.create({
-  projectId: process.env.BROWSERBASE_PROJECT_ID!,
-  timeout: 120, // 2 minute session — visits 3-4 pages max
-});
-```
+Stagehand V4 — `browserbase.launch({ apiKey })`, no project id, one session at a time, always closed in `finally`. Source of truth: `agent/researcher.ts` and `library-docs.md`'s "Browserbase + Stagehand (V4)" section (the V3 `bb.sessions.create({ projectId })` pattern that used to be here no longer applies).
 
 ---
 
@@ -363,45 +357,7 @@ const data = await response.json();
 
 ## Company Research Pattern
 
-```typescript
-// Single session — visits company homepage and sub pages sequentially
-const stagehand = new Stagehand({
-  env: "BROWSERBASE",
-  apiKey: process.env.BROWSERBASE_API_KEY!,
-  projectId: process.env.BROWSERBASE_PROJECT_ID!,
-  browserbaseSessionID: session.id,
-  // Not swapped to Venice/GLM 5.2 — Stagehand's model wiring is a named-provider
-  // string, not an arbitrary OpenAI-compatible baseURL; Venice compatibility is
-  // unverified. Confirm before building Feature 13. See library-docs.md's Stagehand section.
-  modelName: "gpt-4o",
-  modelClientOptions: { apiKey: process.env.OPENAI_API_KEY! },
-});
-
-await stagehand.init();
-const page = stagehand.page;
-
-// Clean company name and construct homepage URL
-const cleanName = companyName
-  .replace(/\s*(Inc\.?|LLC|Ltd\.?|Corp\.?|Co\.?).*$/i, "")
-  .trim()
-  .toLowerCase()
-  .replace(/\s+/g, "");
-
-const homepageUrl = `https://www.${cleanName}.com`;
-
-// Navigate and extract — graceful fallback if page not found
-try {
-  await page.goto(homepageUrl);
-  await page.waitForLoadState("networkidle");
-  const content = await stagehand.extract({ instruction: "..." });
-} catch (error) {
-  // Log and continue — GPT-4o will synthesize from what was found
-  await logAgentError(jobId, error);
-}
-
-// Always close session when done
-await stagehand.close();
-```
+Implemented in Feature 13: `app/api/agent/research/route.ts` → `lib/company-url.ts` (homepage) → `agent/researcher.ts` (one Stagehand V4 session: homepage + max 3 sub-pages, Venice via `lib/stagehand-model.ts`) → `agent/research-synthesis.ts` (GLM 5.2, 9-field dossier) → `jobs.company_research`. See `library-docs.md` and `progress-tracker.md` for the details and gotchas; the old V3 snippet that lived here is removed.
 
 ---
 

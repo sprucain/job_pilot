@@ -252,8 +252,7 @@ All environment variables defined in `.env.local` for development. Never hardcod
 | ------------------------------- | --------------------------------------------------------------------------- |
 | `NEXT_PUBLIC_INSFORGE_URL`      | lib/insforge-client.ts, lib/insforge-server.ts, actions/auth.ts, proxy.ts  |
 | `NEXT_PUBLIC_INSFORGE_ANON_KEY` | lib/insforge-client.ts, lib/insforge-server.ts, actions/auth.ts, proxy.ts  |
-| `BROWSERBASE_API_KEY`           | lib/browserbase.ts     |
-| `BROWSERBASE_PROJECT_ID`        | lib/browserbase.ts     |
+| `BROWSERBASE_API_KEY`           | agent/researcher.ts (no project id needed — the key resolves it) |
 | `VENICE_API_KEY`                | lib/venice-client.ts (agent/ functions import the client from there) |
 | `ADZUNA_APP_ID`                 | lib/adzuna.ts          |
 | `ADZUNA_APP_KEY`                | lib/adzuna.ts          |

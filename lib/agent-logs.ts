@@ -9,7 +9,7 @@ type LogLevel = "info" | "success" | "warning" | "error";
 // never mask the original agent error it was trying to record.
 export async function logAgentError(
   insforge: InsforgeServer,
-  runId: string,
+  runId: string | null,
   userId: string,
   jobId: string | null,
   message: string,

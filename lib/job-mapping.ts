@@ -1,4 +1,5 @@
-import type { Job, JobDetail, JobSource } from "@/types";
+import { asString, asStringArray } from "@/lib/json-normalize";
+import type { CompanyDossier, Job, JobDetail, JobSource } from "@/types";
 
 // Only the columns this feature actually reads/writes. architecture.md's full `jobs`
 // schema has several more columns (responsibilities, requirements, nice_to_have,
@@ -50,7 +51,7 @@ export function mapJobRowToUi(row: JobRow): Job {
 }
 
 export const JOB_DETAIL_COLUMNS =
-  "id, company, title, match_score, match_reason, matched_skills, missing_skills, salary, location, job_type, about_role, source_url, external_apply_url, found_at";
+  "id, company, title, match_score, match_reason, matched_skills, missing_skills, salary, location, job_type, about_role, source_url, external_apply_url, company_research, found_at";
 
 export type JobDetailRow = {
   id: string;
@@ -66,6 +67,7 @@ export type JobDetailRow = {
   about_role: string | null;
   source_url: string | null;
   external_apply_url: string | null;
+  company_research: unknown;
   found_at: string;
 };
 
@@ -101,6 +103,26 @@ function uniqueSkills(skills: string[] | null): string[] {
   });
 }
 
+// jsonb comes back untyped — coerce field by field so a malformed or partial row can never
+// crash the page. Returns null when nothing usable was stored (renders the empty state).
+export function normalizeCompanyDossier(value: unknown): CompanyDossier | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const dossier: CompanyDossier = {
+    companyOverview: asString(raw.companyOverview),
+    techStack: asStringArray(raw.techStack),
+    culture: asStringArray(raw.culture),
+    whyThisRole: asString(raw.whyThisRole),
+    yourEdge: asStringArray(raw.yourEdge),
+    gapsToAddress: asStringArray(raw.gapsToAddress),
+    smartQuestions: asStringArray(raw.smartQuestions),
+    interviewPrep: asStringArray(raw.interviewPrep),
+    sources: asStringArray(raw.sources),
+  };
+  const hasContent = Object.values(dossier).some((field) => (Array.isArray(field) ? field.length > 0 : field !== ""));
+  return hasContent ? dossier : null;
+}
+
 export function mapJobRowToDetail(row: JobDetailRow): JobDetail {
   const jobPostUrl = safeExternalUrl(row.source_url);
   return {
@@ -119,5 +141,6 @@ export function mapJobRowToDetail(row: JobDetailRow): JobDetail {
     description: row.about_role ?? "",
     jobPostUrl,
     applyUrl: safeExternalUrl(row.external_apply_url) ?? jobPostUrl,
+    companyResearch: normalizeCompanyDossier(row.company_research),
   };
 }
